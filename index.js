@@ -24,9 +24,6 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// boardId별 접속자 관리
-// rooms: { boardId: Set<socketId> }
-
 io.on("connection", (socket) => {
   console.log(`클라이언트 접속: ${socket.id}`);
 
@@ -45,7 +42,7 @@ io.on("connection", (socket) => {
   // 카드 이동 이벤트
   socket.on(
     "move_card",
-    async ({ boardId, cardId, fromCol, toCol, position, token, socketId }) => {
+    async ({ boardId, cardId, fromCol, toCol, position, token }) => {
       try {
         await axios.patch(
           `${process.env.SPRING_API_URL}/api/cards/${cardId}/move`,
@@ -53,7 +50,6 @@ io.on("connection", (socket) => {
           { headers: { Authorization: `Bearer ${token}` } },
         );
 
-        // socketId 포함해서 브로드캐스트
         socket.to(`board_${boardId}`).emit("card_moved", {
           cardId,
           fromCol,
@@ -67,6 +63,81 @@ io.on("connection", (socket) => {
         socket.emit("move_card_error", {
           cardId,
           message: "카드 이동에 실패했습니다.",
+        });
+      }
+    },
+  );
+
+  // 댓글 추가 이벤트
+  socket.on(
+    "add_comment",
+    async ({ boardId, cardId, content, token }) => {
+      try {
+        const res = await axios.post(
+          `${process.env.SPRING_API_URL}/api/cards/${cardId}/comments`,
+          { content },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+
+        // 작성자 포함 같은 보드의 모든 클라이언트에게 브로드캐스트
+        io.to(`board_${boardId}`).emit("comment_added", {
+          cardId,
+          comment: res.data,
+        });
+      } catch (error) {
+        console.error("댓글 추가 실패:", error.message);
+        socket.emit("comment_error", {
+          cardId,
+          message: "댓글 추가에 실패했습니다.",
+        });
+      }
+    },
+  );
+
+  // 댓글 수정 이벤트
+  socket.on(
+    "update_comment",
+    async ({ boardId, cardId, commentId, content, token }) => {
+      try {
+        const res = await axios.put(
+          `${process.env.SPRING_API_URL}/api/cards/${cardId}/comments/${commentId}`,
+          { content },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+
+        io.to(`board_${boardId}`).emit("comment_updated", {
+          cardId,
+          comment: res.data,
+        });
+      } catch (error) {
+        console.error("댓글 수정 실패:", error.message);
+        socket.emit("comment_error", {
+          cardId,
+          message: "댓글 수정에 실패했습니다.",
+        });
+      }
+    },
+  );
+
+  // 댓글 삭제 이벤트
+  socket.on(
+    "delete_comment",
+    async ({ boardId, cardId, commentId, token }) => {
+      try {
+        await axios.delete(
+          `${process.env.SPRING_API_URL}/api/cards/${cardId}/comments/${commentId}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+
+        io.to(`board_${boardId}`).emit("comment_deleted", {
+          cardId,
+          commentId,
+        });
+      } catch (error) {
+        console.error("댓글 삭제 실패:", error.message);
+        socket.emit("comment_error", {
+          cardId,
+          message: "댓글 삭제에 실패했습니다.",
         });
       }
     },
